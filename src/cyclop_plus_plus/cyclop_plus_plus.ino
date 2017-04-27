@@ -1197,6 +1197,24 @@ void updateScannerScreen(unsigned char position, unsigned char value1, unsigned 
 }
 
 //******************************************************************************
+//* function: drawPercent
+//*         : value = 0 to 100
+//*         : Percent text needs 4 chars. Fill unused chars with space
+//*         : to avoid a double %, e.g. when percent changes from 100% to 99 %
+//******************************************************************************
+void drawPercent(unsigned char value)
+{
+    osd_int(value);
+
+    if (value > 99) 
+      osd_string("%");
+    else if (value > 9) 
+      osd_string("% "); 
+    else
+      osd_string("%  ");
+}
+
+//******************************************************************************
 //* function: drawBattery
 //*         : value = 0 to 100
 //******************************************************************************
@@ -1216,8 +1234,7 @@ void drawBattery(unsigned char xPos, unsigned char yPos, unsigned char value, bo
     osd_char(OSD_BATTERY_0);
 
   if (showNumbers) {
-    osd_int(value);
-    osd_string("%");
+    drawPercent(value););
   }
 }
 
