@@ -39,15 +39,28 @@
 #define BATTERY_TYPE_OPTION       2
 #define BATTERY_CALIB_OPTION      3 
 #define BATTERY_TEXT_OPTION       4
-#define SHOW_STARTSCREEN_OPTION   5
-#define INFO_LINE_OPTION          6
-#define INFO_LINE_POS_OPTION      7
-#define A_BAND_OPTION             8
-#define B_BAND_OPTION             9
-#define E_BAND_OPTION             10
-#define F_BAND_OPTION             11
-#define R_BAND_OPTION             12
-#define L_BAND_OPTION             13
+#define RSSI_TYPE_OPTION          5
+#define SHOW_STARTSCREEN_OPTION   6
+#define INFO_LINE_OPTION          7
+#define INFO_LINE_POS_OPTION      8
+#define A_BAND_OPTION             9
+#define B_BAND_OPTION             10
+#define E_BAND_OPTION             11
+#define F_BAND_OPTION             12
+#define R_BAND_OPTION             13
+#define L_BAND_OPTION             14
+#define RSSI_CALIB_OPTION         15 // Stores no value itself
+
+#define OPTION_NO_VALUE           1
+#define MAX_SCREEN_OPTIONS        16
+
+// Not shown in Menu
+#define RSSI_CALIB_MAX_HB         15
+#define RSSI_CALIB_MAX_LB         16
+#define RSSI_CALIB_MIN_HB         17
+#define RSSI_CALIB_MIN_LB         18
+
+#define HIDDEN_OPTIONS            4
 
 #define BATTERY_ALARM_DEFAULT     1   /* On    */
 #define ALARM_LEVEL_DEFAULT       5   /* value 1-8   */
@@ -63,18 +76,23 @@
 #define R_BAND_DEFAULT            1   /* On */
 #define L_BAND_DEFAULT            1   /* On */
 #define BATTERY_TEXT_DEFAULT      0   /* Off */
+#define RSSI_TYPE_DEFAULT         0   /* RAW */         
+// Store seperated as high and low bytes
+#define RSSI_CALIB_MAX_HB_DEFAULT 0x2
+#define RSSI_CALIB_MAX_LB_DEFAULT 0x12 /* 530 */ 
+#define RSSI_CALIB_MIN_HB_DEFAULT 0x0
+#define RSSI_CALIB_MIN_LB_DEFAULT 0xC /* 200  */
 
-#define MAX_OPTIONS               14
+#define MAX_EEPROM_OPTIONS (MAX_SCREEN_OPTIONS + HIDDEN_OPTIONS - OPTION_NO_VALUE)
 
 // User Configuration Commands
-#define TEST_ALARM_COMMAND        14
-#define RESET_SETTINGS_COMMAND    15
-#define EXIT_COMMAND              16
+#define TEST_ALARM_COMMAND        16
+#define RESET_SETTINGS_COMMAND    17
+#define EXIT_COMMAND              18
 #define MAX_COMMANDS              3
 
 // Number of lines in configuration menu
 #define MAX_OPTION_LINES          9
-
 
 // battery text needs 4 chars extra in worst case 
 // (3 digits + %)
@@ -127,7 +145,7 @@
 //EEPROM addresses
 #define EEPROM_CHANNEL            0
 #define EEPROM_OPTIONS            1
-#define EEPROM_CHECK              (EEPROM_OPTIONS + MAX_OPTIONS)
+#define EEPROM_CHECK              (EEPROM_OPTIONS + MAX_EEPROM_OPTIONS)
 
 // click types
 #define NO_CLICK                  0
@@ -146,6 +164,6 @@
 // Release information
 #define VER_DATE_STRING           "2017-03-13"
 #define VER_INFO_STRING           "v2.3 by Dvogonen"
-#define VER_EEPROM                241
+#define VER_EEPROM                242
 
 #endif // cyclop_plus_osd_h

@@ -111,7 +111,7 @@ void          drawAutoScanScreen(void);
 void          drawBattery(unsigned char xPos, unsigned char yPos, unsigned char value, bool showNumbers = false );
 void          drawLeftInfoLine( void );
 void          drawLogo( unsigned char xPos, unsigned char yPos);
-void          drawOptionsScreen(unsigned char option, unsigned char in_edit_state );
+void          drawOptionsScreen(unsigned char option, unsigned char in_edit_state, unsigned char rssi_calib_state);
 void          drawRightInfoLine( void );
 void          drawScannerScreen( void );
 void          drawStartScreen(void);
@@ -198,7 +198,7 @@ unsigned long alarmTimer = 0;
 unsigned char alarmSoundOn = 0;
 unsigned int  alarmOnPeriod = 0;
 unsigned int  alarmOffPeriod = 0;
-unsigned char options[MAX_OPTIONS];
+unsigned char options[MAX_EEPROM_OPTIONS];
 unsigned char saveScreenActive = 0;
 unsigned char screenCleaning = 0;
 rtc6715 receiver( SPI_CLOCK_PIN, SLAVE_SELECT_PIN, SPI_DATA_PIN );
@@ -372,7 +372,7 @@ void loop()
 void writeEeprom(void) {
   unsigned char i;
   EEPROM.write(EEPROM_CHANNEL, currentChannel);
-  for (i = 0; i < MAX_OPTIONS; i++)
+  for (i = 0; i < MAX_EEPROM_OPTIONS; i++)
     EEPROM.write(EEPROM_OPTIONS + i, options[i]);
   EEPROM.write(EEPROM_CHECK, VER_EEPROM);
 }
@@ -386,7 +386,7 @@ bool readEeprom(void) {
   if (EEPROM.read(EEPROM_CHECK) != VER_EEPROM)
     return false;
   currentChannel =   EEPROM.read(EEPROM_CHANNEL);
-  for (i = 0; i < MAX_OPTIONS; i++)
+  for (i = 0; i < MAX_EEPROM_OPTIONS; i++)
     options[i] = EEPROM.read(EEPROM_OPTIONS + i);
   updateSoftPositions();
   return true;
@@ -806,6 +806,7 @@ void resetOptions(void) {
   options[ALARM_LEVEL_OPTION]      = ALARM_LEVEL_DEFAULT;
   options[BATTERY_TYPE_OPTION]     = BATTERY_TYPE_DEFAULT;
   options[BATTERY_CALIB_OPTION]    = BATTERY_CALIB_DEFAULT;
+  options[RSSI_TYPE_OPTION]        = RSSI_TYPE_DEFAULT;
   options[SHOW_STARTSCREEN_OPTION] = SHOW_STARTSCREEN_DEFAULT;
   options[INFO_LINE_OPTION]        = INFO_LINE_DEFAULT;
   options[INFO_LINE_POS_OPTION]    = INFO_LINE_POS_DEFAULT;
@@ -816,7 +817,10 @@ void resetOptions(void) {
   options[R_BAND_OPTION]           = R_BAND_DEFAULT;
   options[L_BAND_OPTION]           = L_BAND_DEFAULT;
   options[BATTERY_TEXT_OPTION]     = BATTERY_TEXT_DEFAULT;
-
+  options[RSSI_CALIB_MAX_HB]       = RSSI_CALIB_MAX_HB_DEFAULT;
+  options[RSSI_CALIB_MAX_LB]       = RSSI_CALIB_MAX_LB_DEFAULT;
+  options[RSSI_CALIB_MIN_HB]       = RSSI_CALIB_MIN_HB_DEFAULT;
+  options[RSSI_CALIB_MIN_LB]       = RSSI_CALIB_MIN_LB_DEFAULT;
   updateSoftPositions();
 }
 
@@ -829,10 +833,12 @@ void setOptions()
   unsigned char menuSelection = 0;
   unsigned char click = NO_CLICK;
   unsigned char in_edit_state = 0;
+  unsigned char rssi_calib_state = 1; // 1 max, 0 min
+  int rssi = 0;
   long redrawTimer = 0;
 
   // Display option screen
-  drawOptionsScreen( menuSelection, in_edit_state );
+  drawOptionsScreen( menuSelection, in_edit_state, rssi_calib_state );
 
   // Let the user release the button
   getClickType( BUTTON_PIN );
@@ -857,6 +863,21 @@ void setOptions()
           {
             if (options[BATTERY_CALIB_OPTION] < 250)
               options[BATTERY_CALIB_OPTION] += 5;
+          }
+          else if (menuSelection == RSSI_CALIB_OPTION)
+          {
+            rssi = averageAnalogRead(RSSI_PIN);
+            if (rssi_calib_state) // max
+            {  
+              options[RSSI_CALIB_MAX_HB] = rssi >> 8;
+              options[RSSI_CALIB_MAX_LB] = rssi & 0x00ff;
+            }
+            else // min
+            {
+              options[RSSI_CALIB_MIN_HB] = rssi >> 8;
+              options[RSSI_CALIB_MIN_LB] = rssi & 0x00ff;
+            }
+            rssi_calib_state = !rssi_calib_state;
           }
           else
             options[menuSelection] = !options[menuSelection];
@@ -888,13 +909,13 @@ void setOptions()
 
         case SINGLE_CLICK:    // Move to next option
           menuSelection++;
-          if (menuSelection >= MAX_OPTIONS + MAX_COMMANDS)
+          if (menuSelection >= MAX_SCREEN_OPTIONS + MAX_COMMANDS)
             menuSelection = 0;
           break;
 
         case DOUBLE_CLICK:    // Move to previous option
           if (menuSelection == 0)
-            menuSelection = MAX_OPTIONS + MAX_COMMANDS - 1;
+            menuSelection = MAX_SCREEN_OPTIONS + MAX_COMMANDS - 1;
           else
             menuSelection--;
           break;
@@ -913,7 +934,7 @@ void setOptions()
       }
     if (( click != NO_CLICK ) || ( millis() > redrawTimer )) {
       redrawTimer = millis() + 1000;
-      drawOptionsScreen( menuSelection, in_edit_state );
+      drawOptionsScreen(menuSelection, in_edit_state, rssi_calib_state);
     }
   }
   updateSoftPositions();
@@ -1197,6 +1218,24 @@ void updateScannerScreen(unsigned char position, unsigned char value1, unsigned 
 }
 
 //******************************************************************************
+//* function: drawPercent
+//*         : value = 0 to 100
+//*         : Percent text needs 4 chars. Fill unused chars with space
+//*         : to avoid a double %, e.g. when percent changes from 100% to 99 %
+//******************************************************************************
+void drawPercent(unsigned char value)
+{
+    osd_int(value);
+
+    if (value > 99) 
+      osd_string("%");
+    else if (value > 9) 
+      osd_string("% "); 
+    else
+      osd_string("%  ");
+}
+
+//******************************************************************************
 //* function: drawBattery
 //*         : value = 0 to 100
 //******************************************************************************
@@ -1216,15 +1255,46 @@ void drawBattery(unsigned char xPos, unsigned char yPos, unsigned char value, bo
     osd_char(OSD_BATTERY_0);
 
   if (showNumbers) {
-    osd_int(value);
-    osd_string("%");
+    drawPercent(value);
   }
+}
+
+//******************************************************************************
+//* function: drawRSSI
+//******************************************************************************
+
+void drawRSSI()
+{
+  unsigned int rssi = 0;
+  int rssi_percent = 0;
+  unsigned int rssi_min = 0;
+  unsigned int rssi_max = 0;
+  
+  rssi = averageAnalogRead(RSSI_PIN);
+  if (options[RSSI_TYPE_OPTION])
+  {
+    rssi_min = (options[RSSI_CALIB_MIN_HB] << 8) | options[RSSI_CALIB_MIN_LB];
+    rssi_max = (options[RSSI_CALIB_MAX_HB] << 8) | options[RSSI_CALIB_MAX_LB];
+    rssi_percent = map(rssi, rssi_min, rssi_max, 0, 100);
+
+    if (rssi_percent > 100)
+      rssi_percent = 100;
+
+    if (rssi_percent < 0)
+      rssi_percent = 0;
+         
+    drawPercent(rssi_percent);
+   }
+   else
+   {
+      osd_int(rssi);
+   }
 }
 
 //******************************************************************************
 //* function: drawOptionsScreen
 //******************************************************************************
-void drawOptionsScreen(unsigned char option, unsigned char in_edit_state ) {
+void drawOptionsScreen(unsigned char option, unsigned char in_edit_state, unsigned char rssi_calib_state) {
   unsigned char i, j;
   unsigned int voltage = getVoltage();
 
@@ -1232,13 +1302,13 @@ void drawOptionsScreen(unsigned char option, unsigned char in_edit_state ) {
   if (option != 0)
     j = option - 1;
   else
-    j = MAX_OPTIONS + MAX_COMMANDS - 1;
+    j = MAX_SCREEN_OPTIONS + MAX_COMMANDS - 1;
 
   for (i = 0; i < MAX_OPTION_LINES; i++, j++)
   {
     osd( CMD_SET_Y, i + 3 );
     osd( CMD_SET_X, 0 );
-    if (j >= (MAX_OPTIONS + MAX_COMMANDS))
+    if (j >= (MAX_SCREEN_OPTIONS + MAX_COMMANDS))
       j = 0;
 
     if ((j == option) && !in_edit_state) {
@@ -1251,23 +1321,25 @@ void drawOptionsScreen(unsigned char option, unsigned char in_edit_state ) {
       osd( CMD_DISABLE_INVERSE );
     }
     switch (j) {
-      case BATTERY_ALARM_OPTION:     osd_string("battery alarm      "); break;
-      case ALARM_LEVEL_OPTION:       osd_string("alarm sound level  "); break;
-      case BATTERY_TYPE_OPTION:      osd_string("battery type       "); break;
-      case BATTERY_CALIB_OPTION:     osd_string("volt calibration   "); break;
-      case SHOW_STARTSCREEN_OPTION:  osd_string("show start screen  "); break;
-      case INFO_LINE_OPTION:         osd_string("constant info line "); break;
-      case INFO_LINE_POS_OPTION:     osd_string("info line position "); break;
-      case A_BAND_OPTION:            osd_string("boscam a band      "); break;
-      case B_BAND_OPTION:            osd_string("boscam b band      "); break;
-      case E_BAND_OPTION:            osd_string("foxtech/dji band   "); break;
-      case F_BAND_OPTION:            osd_string("fatshark band      "); break;
-      case R_BAND_OPTION:            osd_string("race band          "); break;
-      case L_BAND_OPTION:            osd_string("low band           "); break;
-      case BATTERY_TEXT_OPTION:      osd_string("show bat percentage"); break;
-      case RESET_SETTINGS_COMMAND:   osd_string("reset settings     "); break;
-      case TEST_ALARM_COMMAND:       osd_string("test alarm         "); break;
-      case EXIT_COMMAND:             osd_string("exit               "); break;
+      case BATTERY_ALARM_OPTION:     osd_string("battery alarm       "); break;
+      case ALARM_LEVEL_OPTION:       osd_string("alarm sound level   "); break;
+      case BATTERY_TYPE_OPTION:      osd_string("battery type        "); break;
+      case BATTERY_CALIB_OPTION:     osd_string("volt calibration    "); break;
+      case RSSI_TYPE_OPTION:         osd_string("show rssi percentage"); break;
+      case SHOW_STARTSCREEN_OPTION:  osd_string("show start screen   "); break;
+      case INFO_LINE_OPTION:         osd_string("constant info line  "); break;
+      case INFO_LINE_POS_OPTION:     osd_string("info line position  "); break;
+      case A_BAND_OPTION:            osd_string("boscam a band       "); break;
+      case B_BAND_OPTION:            osd_string("boscam b band       "); break;
+      case E_BAND_OPTION:            osd_string("foxtech/dji band    "); break;
+      case F_BAND_OPTION:            osd_string("fatshark band       "); break;
+      case R_BAND_OPTION:            osd_string("race band           "); break;
+      case L_BAND_OPTION:            osd_string("low band            "); break;
+      case BATTERY_TEXT_OPTION:      osd_string("show bat percentage "); break;
+      case RSSI_CALIB_OPTION:        osd_string("rssi calibration    "); break;
+      case RESET_SETTINGS_COMMAND:   osd_string("reset settings      "); break;
+      case TEST_ALARM_COMMAND:       osd_string("test alarm          "); break;
+      case EXIT_COMMAND:             osd_string("exit                "); break;
     }
     if ((j == option) && in_edit_state) {
       osd( CMD_ENABLE_FILL );
@@ -1278,12 +1350,13 @@ void drawOptionsScreen(unsigned char option, unsigned char in_edit_state ) {
       osd( CMD_DISABLE_FILL );
       osd( CMD_DISABLE_INVERSE );
     }
-    if (j < MAX_OPTIONS) {
+    if (j < MAX_SCREEN_OPTIONS) {
       switch (j) {
         case BATTERY_ALARM_OPTION:    osd_string(options[j] ? "yes    " : "no     "); break;
         case ALARM_LEVEL_OPTION:      osd_int(options[j]);      osd_string("      "); break;
         case BATTERY_TYPE_OPTION:     osd_string(options[j] ? "2s lipo" : "3s lipo"); break;
         case BATTERY_CALIB_OPTION:    osd_int(voltage / 10); osd_string("."); osd_int(voltage % 10);  osd_string("   "); break;
+        case RSSI_TYPE_OPTION:        osd_string(options[j] ? "on     " : "off    "); break;  
         case SHOW_STARTSCREEN_OPTION: osd_string(options[j] ? "yes    " : "no     "); break;
         case INFO_LINE_OPTION:        osd_string(options[j] ? "yes    " : "no     "); break;
         case INFO_LINE_POS_OPTION:    osd_string(options[j] ? "left   " : "right  "); break;
@@ -1294,6 +1367,7 @@ void drawOptionsScreen(unsigned char option, unsigned char in_edit_state ) {
         case R_BAND_OPTION:           osd_string(options[j] ? "on     " : "off    "); break;
         case L_BAND_OPTION:           osd_string(options[j] ? "on     " : "off    "); break;
         case BATTERY_TEXT_OPTION:     osd_string(options[j] ? "on     " : "off    "); break;
+        case RSSI_CALIB_OPTION:      osd_string(rssi_calib_state ? "max    " : "min    "); break;
       }
     }
     else
@@ -1326,7 +1400,7 @@ void drawLeftInfoLine( void )
   osd_int(getFrequency(currentChannel));
   osd_char(OSD_SPACE);
   osd_char(OSD_ANTENNA);
-  osd_int(averageAnalogRead(RSSI_PIN));
+  drawRSSI();
 }
 
 //******************************************************************************
@@ -1337,6 +1411,9 @@ void drawRightInfoLine( void )
   char buffer[3];
   uint8_t startX = 12;
 
+  if (options[RSSI_TYPE_OPTION])
+    startX--;
+  
   if (options[BATTERY_TEXT_OPTION])
   {
     startX -= BATTERY_TEXT_WIDTH;
@@ -1349,6 +1426,6 @@ void drawRightInfoLine( void )
   osd_int(getFrequency(currentChannel));
   osd_char(OSD_SPACE);
   osd_char(OSD_ANTENNA);
-  osd_int(averageAnalogRead(RSSI_PIN));
+  drawRSSI();
   batteryMeter(GetRightBatteryX(25), 0);
 }
